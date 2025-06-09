@@ -1,0 +1,63 @@
+# -- mode: ruby --
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"
+
+  config.vm.network "private_network", ip: "192.168.56.82"
+  config.vm.network "public_network"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = "2048"
+  end
+
+  config.vm.provision "shell", inline: <<-SHELL
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Disable SSL verification for APT
+    echo 'Acquire::https::Verify-Peer "false";' | sudo tee /etc/apt/apt.conf.d/99insecure-ssl
+
+    # Disable SSL verification for wget
+    echo "check_certificate = off" | sudo tee -a /etc/wgetrc
+
+    # Disable SSL verification for curl
+    echo "insecure" | sudo tee -a /root/.curlrc
+    sudo cp /root/.curlrc /home/vagrant/.curlrc
+    sudo chown vagrant:vagrant /home/vagrant/.curlrc
+
+    # Update package list and install dependencies
+    sudo apt-get update --allow-unauthenticated -y
+    sudo apt-get install -y \
+      ca-certificates \
+      curl \
+      gnupg \
+      lsb-release \
+      apt-transport-https \
+      software-properties-common
+
+    # Install Docker
+    sudo install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+    echo \
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+      https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    sudo apt-get update --allow-unauthenticated -y
+    sudo apt-get install -y \
+      docker-ce \
+      docker-ce-cli \
+      containerd.io \
+      docker-buildx-plugin \
+      docker-compose-plugin
+
+    # Add vagrant user to docker group
+    sudo usermod -aG docker vagrant
+
+    # Enable and start Docker
+    sudo systemctl enable docker
+    sudo systemctl start docker
+  SHELL
+end
